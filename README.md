@@ -1,13 +1,12 @@
 # syndicus
 
-A rusty interpretation of publish/subscribe using types for topics.
+A rusty interpretation of publish/subscribe using types for topics
+and compaction to control backlog.
 
 ## Log
 
-A `Log` is cross between a broadcast queue and a key-value store.
+A `Log` exchanges messages between publishers and subscribers on a many to many basis. 
 It is an in-process, async data structure built on tokio `watch`. 
-Messages are exchanged on a many to many basis between publishers 
-and subscribers.
 
 Types are used for topics. An application defines a unified type for communication, 
 typically an `enum`. Call this type `A`.  
@@ -19,9 +18,9 @@ The derive-more crate can neatly produce these conversions.
 
 ### No Blocking or Lagging
 
-A `Log` has no backlog limit and, under certain conditions, 
-will operate in bounded space. Publishers are never blocked and 
-subscribers never get lagging errors. The price of this is compaction.   
+A `Log` has no backlog limit meaning Publishers are never blocked and 
+subscribers never get lagging errors. With certain assumptions, `Log`  
+will also operate in bounded space.  The price of this is compaction.   
 
 ### Compaction
 
@@ -41,3 +40,9 @@ This effectively imposes a key-value structure on the data.
 The space complexity of a `Log` is O(n) where n is the number of distinct
 compaction keys among the published messages. This is comparable to the
 space requirement of a key-value store.
+
+## scope
+
+Function `scope` implements a form of structured concurrency intended to 
+work with `Log`. This is built on tokio `JoinSet`.  Tasks spawned within a scope 
+will be joined at the close of the scope.  
