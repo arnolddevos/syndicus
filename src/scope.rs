@@ -108,7 +108,8 @@ where
     E: 'static + Send,
 {
     let joiner = Joiner::new();
-    match body(joiner.tasker()).await {
+    let tasker = joiner.tasker();
+    match body(tasker).await {
         Ok(a) => match joiner.join_all().await {
             Ok(()) => Ok(a),
             Err(e) => Err(e),
@@ -118,6 +119,48 @@ where
             Err(e)
         }
     }
+}
+
+pub async fn simple_scope<A, E>(
+    body: impl async FnOnce(&mut JoinSet<Result<(), E>>) -> Result<A, E>,
+) -> Result<A, E>
+where
+    E: 'static,
+{
+    let mut set = JoinSet::<Result<(), E>>::new();
+
+    // Join the next completed or aborted task
+    let join_next = async |set: &mut JoinSet<Result<(), E>>| {
+        let next = set.join_next().await;
+        next.map(|outer| match outer {
+            Ok(inner) => inner, // task completion
+            Err(_) => Ok(()),   // task was (deliberately?) aborted
+        })
+    };
+
+    // Join all tasks in the `JoinSet` as they complete.
+    // If a task completes with an error, abort all remaining tasks.
+    let join_all = async |set: &mut JoinSet<Result<(), E>>| {
+        loop {
+            match join_next(set).await {
+                Some(Ok(())) => (), // a task succeeded or aborted
+                Some(e) => {
+                    // a task returned error
+                    set.shutdown().await;
+                    break e;
+                }
+                None => break Ok(()), // all tasks succeeded or aborted
+            }
+        }
+    };
+
+    let result = body(&mut set).await;
+    if result.is_ok() {
+        join_all(&mut set).await?
+    } else {
+        set.shutdown().await;
+    }
+    result
 }
 
 #[cfg(test)]
@@ -140,6 +183,26 @@ mod test {
                         Ok(())
                     })
                     .await;
+            }
+            Ok(counter)
+        })
+        .await
+        .unwrap();
+        assert!(*counter.lock().await == task_load)
+    }
+
+    #[tokio::test]
+    async fn test_simple_scope() {
+        let task_load = 100;
+        let counter = simple_scope::<_, ()>(async |tasker| {
+            let counter = Arc::new(Mutex::new(0usize));
+            for _i in 0..task_load {
+                let c = counter.clone();
+                tasker.spawn(async move {
+                    sleep(Duration::from_millis(100)).await;
+                    *c.lock().await += 1;
+                    Ok(())
+                });
             }
             Ok(counter)
         })
