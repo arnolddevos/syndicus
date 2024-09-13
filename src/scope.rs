@@ -120,7 +120,9 @@ where
         }
     }
 }
-
+/// Run an async function, the scope body, passing a `JoinSet` and then join all spawned tasks.
+/// Return the result of the function if it and its tasks succeed.  
+/// Otherwise return first error encountered.
 pub async fn simple_scope<A, E>(
     body: impl async FnOnce(&mut JoinSet<Result<(), E>>) -> Result<A, E>,
 ) -> Result<A, E>
