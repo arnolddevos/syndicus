@@ -18,9 +18,9 @@ The derive-more crate can neatly produce these conversions.
 
 ### No Blocking or Lagging
 
-A `Log` has no backlog limit meaning Publishers are never blocked and 
+A `Log` has no backlog limit meaning publishers are never blocked and 
 subscribers never get lagging errors. With certain assumptions, `Log`  
-will also operate in bounded space.  The price of this is compaction.   
+will also operate in bounded space.  The price of this is compaction.  
 
 ### Compaction
 
