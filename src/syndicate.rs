@@ -10,7 +10,7 @@ use tokio::{
     task::yield_now,
 };
 
-/// A `Syndicate` is a rusty interpretation of publish/subscribe using types for topics.
+/// A `Syndicate` is a hub linking `Publisher`s to `Subscriber`s and using types for topics.
 /// It is an in-process, async data structure built on tokio `watch`.
 ///
 /// An application defines a unified type for communication, typically
@@ -218,16 +218,13 @@ where
     }
 }
 
-/// A handle to the syndicate that returns the published messages in order.
-/// It carries an offset into the syndicate and caches the next values to be
-/// pulled via this subscription.  
+/// A handle to the syndicate that returns messages in order of publication.
+/// The subscription converts and filters messages from type `A` to `B` via `TryInto<B>`.
 ///
-/// The subscription converts and filters messages from
-/// type `A` to `B` via `TryInto<B>`.
+/// Internally, the `Subscription` has an offset into the `Syndicate` logs
+/// and a cache of pending values.
 ///
-/// It is not designed to be cloned. The principal method, `pull`
-/// required an exclusize reference. See `SharedSubscription` for a
-/// handle that can be shared between tasks.
+/// A `Subcription` cannot be cloned, see `SharedSubscription` instead.
 #[derive(Debug)]
 pub struct Subscription<A, B> {
     offset: usize,

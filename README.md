@@ -19,14 +19,14 @@ The derive-more crate can neatly produce these conversions.
 ### No Blocking or Lagging
 
 A `Syndicate` has no backlog limit meaning publishers are never blocked and 
-subscribers never get lagging errors. With certain assumptions, `Syndicate`  
-will also operate in bounded space.  The price of this is compaction.  
+subscribers never get lagging errors. With certain assumptions, `Syndicate`
+will also operate in bounded space.  The price of this is compaction. 
 
 ### Compaction
 
 The `Syndicate` will drop certain older messages.
 The last `linear_min` messages are always retained.  Any older message may be
-dropped if it has the same `compaction_key` as a younger message.  
+dropped if it has the same `compaction_key` as a younger message.
 The order of publication of messages is preserved in any case.
 
 > The assumption is that a subscriber only needs to see the latest message with
@@ -50,10 +50,8 @@ will be joined at the close of the scope.
 Tasks are assumed to return `Result<(), Error>` where `Error` is an error type used 
 throughout the application.  
 
-Communication, other than errors is assumed to be via a `Syndicate<Message>` so tasks
-return unit, normally.
-
-In in this design, `Message` and `Error` follow different paths and are handled separately.
+Task input/output is assumed to be via a `Syndicate<Message>`. In this design 
+`Message` and `Error` follow different paths and are handled separately.
 Tasks can be managed in sets (`JoinSet`) as they all have the same result type.
 
 
