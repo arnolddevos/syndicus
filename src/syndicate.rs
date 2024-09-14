@@ -341,7 +341,7 @@ mod test {
         let (_, p, mut s, test_data) = fixtures();
         let run_length = test_data.len();
 
-        scope(async |tasker: &mut JoinSet<Result<(), String>>| {
+        scope(|tasker: &mut JoinSet<Result<(), String>>| {
             tasker.spawn(async move {
                 fill_log(p, test_data).await;
                 Ok(())
