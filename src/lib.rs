@@ -1,11 +1,12 @@
 #![feature(async_closure)]
-mod log;
 mod scope;
+mod syndicate;
 
-#[cfg(feature = "log")]
-pub use log::{Log, Publisher, SharedSubscription, Subscription};
 #[cfg(feature = "scope")]
 pub use scope::scope;
+#[cfg(feature = "log")]
+pub use syndicate::{Publisher, SharedSubscription, Subscription, Syndicate};
+
 use std::hash::Hash;
 
 /// The log element type must provide a compaction key via this trait.
