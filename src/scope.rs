@@ -13,31 +13,6 @@ where
 {
     let mut set = JoinSet::<Result<(), E>>::new();
 
-    // Join the next completed or aborted task
-    let join_next = async |set: &mut JoinSet<Result<(), E>>| {
-        let next = set.join_next().await;
-        next.map(|outer| match outer {
-            Ok(inner) => inner, // task completion, possibly with error
-            Err(_) => Ok(()),   // task was (deliberately?) aborted
-        })
-    };
-
-    // Join all tasks in the `JoinSet` as they complete.
-    // If a task completes with an error, abort all remaining tasks.
-    let join_all = async |set: &mut JoinSet<Result<(), E>>| {
-        loop {
-            match join_next(set).await {
-                Some(Ok(())) => (), // a task succeeded or aborted
-                Some(e) => {
-                    // a task returned error
-                    set.shutdown().await;
-                    break e;
-                }
-                None => break Ok(()), // all tasks succeeded or aborted
-            }
-        }
-    };
-
     let result = body(&mut set);
     if result.is_ok() {
         join_all(&mut set).await?;
@@ -45,6 +20,37 @@ where
         set.shutdown().await;
     }
     result
+}
+
+/// Join the next completed or aborted task
+async fn join_next<E>(set: &mut JoinSet<Result<(), E>>) -> Option<Result<(), E>>
+where
+    E: 'static,
+{
+    let next = set.join_next().await;
+    next.map(|outer| match outer {
+        Ok(inner) => inner, // task completion, possibly with error
+        Err(_) => Ok(()),   // task was (deliberately?) aborted
+    })
+}
+
+/// Join all tasks in the `JoinSet` as they complete.
+/// If a task completes with an error, abort all remaining tasks.
+async fn join_all<E>(set: &mut JoinSet<Result<(), E>>) -> Result<(), E>
+where
+    E: 'static,
+{
+    loop {
+        match join_next(set).await {
+            Some(Ok(())) => (), // a task succeeded or aborted
+            Some(e) => {
+                // a task returned error
+                set.shutdown().await;
+                break e;
+            }
+            None => break Ok(()), // all tasks succeeded or aborted
+        }
+    }
 }
 
 #[cfg(test)]
