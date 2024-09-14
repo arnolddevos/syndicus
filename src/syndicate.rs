@@ -10,7 +10,7 @@ use tokio::{
     task::yield_now,
 };
 
-/// A `Log` is a rusty interpretation of publish/subscribe using types for topics.
+/// A `Syndicate` is a rusty interpretation of publish/subscribe using types for topics.
 /// It is an in-process, async data structure built on tokio `watch`.
 ///
 /// An application defines a unified type for communication, typically
@@ -22,7 +22,7 @@ use tokio::{
 /// The derive-more crate can neatly produce these conversions.
 ///
 /// Unlike the various async queues available in rust,
-/// `Log` takes bounded space _and_ has no backlog limit.
+/// `Syndicate` takes bounded space _and_ has no backlog limit.
 ///
 /// Publishers are never blocked, although they may be
 /// made to yield to exert light back-pressure.  
@@ -30,7 +30,7 @@ use tokio::{
 /// Subscribers never get lagging errors and can join at any
 /// time and catch up to the current state.
 ///
-/// The price of this is compaction.   The `Log` will drop certain older messages.
+/// The price of this is compaction.   The `Syndicate` will drop certain older messages.
 /// The last `linear_min` messages are always retained.  Any older message may be
 /// dropped if it has the same `compaction_key` as a younger message.  
 /// The order of publication of messages is preserved in any case.
@@ -38,16 +38,16 @@ use tokio::{
 /// The ability to extract a compaction key is expressed by a trait, `Compactable`.
 /// This effectively imposes a key-value structure on the data.
 ///
-/// The space complexity of a `Log` is O(n) where n is the number of distinct
+/// The space complexity of a `Syndicate` is O(n) where n is the number of distinct
 /// compaction keys among the published messages. This is comparable to the
 /// space requirement of a key-value store.
 #[derive(Debug, Clone)]
-pub struct Log<A> {
+pub struct Syndicate<A> {
     sender: Sender<Inner<A>>,
 }
 
-impl<A> Log<A> {
-    /// Create a new log that retains the last  `linear_min` messages and
+impl<A> Syndicate<A> {
+    /// Create a new syndicate that retains the last  `linear_min` messages and
     /// compacts all messages older than the last `linear_max` massages.
     /// Producers will yield when there are linear_hi retained messages.
     pub fn new(linear_min: usize, linear_hi: usize, linear_max: usize) -> Self {
@@ -65,7 +65,7 @@ impl<A> Log<A> {
     /// Create a new `Subscription` for messages later than a given offset.
     ///
     /// If the offset is `0` all messages of type `B` are subscribed.
-    /// If an offset returned by `Log::snapshot` is given, all messages
+    /// If an offset returned by `Syndicate::snapshot` is given, all messages
     /// of type `B` following the last message in the snapshot are subscribed.
     ///
     /// Note: offset values increase monotonically but are not sequential.  
@@ -85,7 +85,7 @@ impl<A> Log<A> {
 
     /// Create a new subscription to messages of type `B`.
     /// Messages are return in order from the start of
-    /// the log onwards.  Messages removed by compaction
+    /// the syndicate onwards.  Messages removed by compaction
     /// are omitted.
     pub fn subscribe<B>(&self) -> Subscription<A, B>
     where
@@ -102,7 +102,7 @@ impl<A> Log<A> {
         }
     }
 
-    /// The entire contents of the log at this moment.
+    /// The entire contents of the syndicate at this moment.
     pub fn snapshot(&self, offset: usize) -> (usize, Vec<A>)
     where
         A: Clone,
@@ -113,7 +113,7 @@ impl<A> Log<A> {
     }
 }
 
-/// The data structure of a `Log` which is manged by a tokio `watch`.
+/// The data structure of a `Syndicate` which is manged by a tokio `watch`.
 #[derive(Debug)]
 struct Inner<A> {
     /// the most recent elements with contiguous ascending offsets.
@@ -227,11 +227,11 @@ where
     }
 }
 
-/// A handle to the log that returns the published messages in order.
-/// It carries an offset into the log and caches the next values to be
+/// A handle to the syndicate that returns the published messages in order.
+/// It carries an offset into the syndicate and caches the next values to be
 /// pulled via this subscription.  
 ///
-/// The subscription converts and filters the log messages from
+/// The subscription converts and filters the syndicate messages from
 /// type `A` to `B` via `TryInto`.
 ///
 /// It is not designed to be cloned. The principal method, `pull`
@@ -275,11 +275,11 @@ where
     }
 }
 
-/// A handle to the log that returns the published messages in order.
-/// It carries an offset into the log and caches the next values to be
+/// A handle to the syndicate that returns the published messages in order.
+/// It carries an offset into the syndicate and caches the next values to be
 /// pulled via this subscription.  
 ///
-/// The subscription converts and filters the log messages from
+/// The subscription converts and filters the syndicate messages from
 /// type `A` to `B` via `TryInto`.
 ///
 /// A `SharedSubscription` can be cloned and a given message will be delivered
@@ -300,10 +300,10 @@ where
     }
 }
 
-/// A handle to the log through which new messages can be published.
+/// A handle to the syndicate through which new messages can be published.
 ///
 /// The publisher accepts messages of type `B` and converts them to
-/// log messages of type `A` via `Into`.
+/// syndicate messages of type `A` via `Into`.
 #[derive(Debug, Clone)]
 pub struct Publisher<A, B> {
     sender: Sender<Inner<A>>,
@@ -315,7 +315,7 @@ where
     A: Compactable,
     B: Into<A>,
 {
-    /// Put a new message on the log.
+    /// Put a new message on the syndicate.
     pub async fn push(&self, value: B) {
         let mut heavy = false;
         self.sender
@@ -336,9 +336,10 @@ struct Indexed<A> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{scope, Compactable, Tasker};
+    use crate::{scope, Compactable};
     use rand::Rng;
     use std::iter::repeat_with;
+    use tokio::task::JoinSet;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Message(usize, usize);
@@ -355,33 +356,29 @@ mod test {
         let (_, p, mut s, test_data) = fixtures();
         let run_length = test_data.len();
 
-        scope(|tasker: Tasker<String>| async move {
-            tasker
-                .spawn(async move {
-                    fill_log(p, test_data).await;
-                    Ok(())
-                })
-                .await;
+        scope(async |tasker: &mut JoinSet<Result<(), String>>| {
+            tasker.spawn(async move {
+                fill_log(p, test_data).await;
+                Ok(())
+            });
 
-            tasker
-                .spawn(async move {
-                    let mut count = 0;
-                    let mut prev = 0;
-                    while let Some(Message(_, j)) = s.pull().await {
-                        count += 1;
-                        if j > prev {
-                            prev = j
-                        } else {
-                            return Err(format!("Messages out of order {prev}, {j}"));
-                        }
-                    }
-                    if count == run_length {
-                        Ok(()) // for interleaved operation we see every message (no compaction)
+            tasker.spawn(async move {
+                let mut count = 0;
+                let mut prev = 0;
+                while let Some(Message(_, j)) = s.pull().await {
+                    count += 1;
+                    if j > prev {
+                        prev = j
                     } else {
-                        Err(format!("Messages received/sent = {}/{}", count, run_length))
+                        return Err(format!("Messages out of order {prev}, {j}"));
                     }
-                })
-                .await;
+                }
+                if count == run_length {
+                    Ok(()) // for interleaved operation we see every message (no compaction)
+                } else {
+                    Err(format!("Messages received/sent = {}/{}", count, run_length))
+                }
+            });
 
             Ok(())
         })
@@ -449,7 +446,7 @@ mod test {
     }
 
     fn fixtures() -> (
-        Log<Message>,
+        Syndicate<Message>,
         Publisher<Message, Message>,
         Subscription<Message, Message>,
         Vec<Message>,
@@ -460,11 +457,11 @@ mod test {
         (log, p, s, data())
     }
 
-    fn empty_log() -> Log<Message> {
+    fn empty_log() -> Syndicate<Message> {
         let linear_min = 10;
         let linear_hi = 15;
         let linear_max = 20;
-        Log::new(linear_min, linear_hi, linear_max)
+        Syndicate::new(linear_min, linear_hi, linear_max)
     }
 
     fn data() -> Vec<Message> {
