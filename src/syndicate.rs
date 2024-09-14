@@ -21,35 +21,28 @@ use tokio::{
 ///
 /// The derive-more crate can neatly produce these conversions.
 ///
-/// Unlike the various async queues available in rust,
-/// `Syndicate` takes bounded space _and_ has no backlog limit.
-///
-/// Publishers are never blocked, although they may be
-/// made to yield to exert light back-pressure.  
-///
-/// Subscribers never get lagging errors and can join at any
-/// time and catch up to the current state.
-///
-/// The price of this is compaction.   The `Syndicate` will drop certain older messages.
-/// The last `linear_min` messages are always retained.  Any older message may be
+/// Backlog is controlled by compaction which will drop certain older messages.
+/// The last `linear_min` messages are all retained.  Any older message may be
 /// dropped if it has the same `compaction_key` as a younger message.  
 /// The order of publication of messages is preserved in any case.
 ///
-/// The ability to extract a compaction key is expressed by a trait, `Compactable`.
-/// This effectively imposes a key-value structure on the data.
-///
-/// The space complexity of a `Syndicate` is O(n) where n is the number of distinct
-/// compaction keys among the published messages. This is comparable to the
-/// space requirement of a key-value store.
 #[derive(Debug, Clone)]
 pub struct Syndicate<A> {
     sender: Sender<Inner<A>>,
 }
 
 impl<A> Syndicate<A> {
-    /// Create a new syndicate that retains the last  `linear_min` messages and
-    /// compacts all messages older than the last `linear_max` massages.
-    /// Producers will yield when there are linear_hi retained messages.
+    /// Create a new syndicate with the given parameters which control the size of
+    /// the linear log.  Messages in the linear log form a complete history with
+    /// sequential offsets assigned at publication.  
+    ///
+    /// Older messages reside in the nonlinear log and are subject to compaction.    
+    /// Their offsets are monotonic but not sequential.
+    ///
+    /// Tne linear log is maintained between `linear_min` and `linear_max` messages.
+    /// In addition, when the linear log exceeds `linear_hi`, publishers are forced
+    /// to yield to the async runtime on each new message. This is intended to enable
+    /// or at least favour scheduling of subscribers.  
     pub fn new(linear_min: usize, linear_hi: usize, linear_max: usize) -> Self {
         let sender = Sender::new(Inner::<A> {
             linear: Vec::new(),
@@ -83,10 +76,7 @@ impl<A> Syndicate<A> {
         }
     }
 
-    /// Create a new subscription to messages of type `B`.
-    /// Messages are return in order from the start of
-    /// the syndicate onwards.  Messages removed by compaction
-    /// are omitted.
+    /// Create a new subscription for all messages of type `B`.
     pub fn subscribe<B>(&self) -> Subscription<A, B>
     where
         A: Clone,
@@ -94,7 +84,7 @@ impl<A> Syndicate<A> {
         self.subscribe_at(0)
     }
 
-    // Create a new `Publisher`.
+    /// Create a new `Publisher` for messages of type `B`.
     pub fn publish<B>(&self) -> Publisher<A, B> {
         Publisher {
             sender: self.sender.clone(),
@@ -102,7 +92,8 @@ impl<A> Syndicate<A> {
         }
     }
 
-    /// The entire contents of the syndicate at this moment.
+    /// Return a vector of all available messages and the offset of the most
+    /// recent message.
     pub fn snapshot(&self, offset: usize) -> (usize, Vec<A>)
     where
         A: Clone,
@@ -231,8 +222,8 @@ where
 /// It carries an offset into the syndicate and caches the next values to be
 /// pulled via this subscription.  
 ///
-/// The subscription converts and filters the syndicate messages from
-/// type `A` to `B` via `TryInto`.
+/// The subscription converts and filters messages from
+/// type `A` to `B` via `TryInto<B>`.
 ///
 /// It is not designed to be cloned. The principal method, `pull`
 /// required an exclusize reference. See `SharedSubscription` for a
@@ -249,7 +240,7 @@ impl<A, B> Subscription<A, B>
 where
     A: Clone + TryInto<B>,
 {
-    /// Get the next message or None if there are no more publishers.
+    /// Get the next message or None if there are no more messages or publishers.
     pub async fn pull(&mut self) -> Option<B> {
         loop {
             if let Some(value) = self.backlog.pop() {
@@ -267,7 +258,7 @@ where
         }
     }
 
-    /// Convert to a `SharedSubscription`
+    /// Convert to a `SharedSubscription`.
     pub fn share(self) -> SharedSubscription<A, B> {
         SharedSubscription {
             shared: Arc::new(Mutex::new(self)),
@@ -275,16 +266,10 @@ where
     }
 }
 
-/// A handle to the syndicate that returns the published messages in order.
-/// It carries an offset into the syndicate and caches the next values to be
-/// pulled via this subscription.  
-///
-/// The subscription converts and filters the syndicate messages from
-/// type `A` to `B` via `TryInto`.
-///
-/// A `SharedSubscription` can be cloned and a given message will be delivered
-/// by at most one of the clones.  This is useful to distribute messages
-/// among tasks.
+/// A handle to the syndicate that returns messages like a `Subscription`.
+/// However, a `SharedSubscription` can be cloned and a given message will
+/// be delivered by at most one of the clones.  This is useful to distribute
+/// messages among tasks.
 #[derive(Debug, Clone)]
 pub struct SharedSubscription<A, B> {
     shared: Arc<Mutex<Subscription<A, B>>>,
@@ -303,7 +288,7 @@ where
 /// A handle to the syndicate through which new messages can be published.
 ///
 /// The publisher accepts messages of type `B` and converts them to
-/// syndicate messages of type `A` via `Into`.
+/// type `A` via `Into<A>`.
 #[derive(Debug, Clone)]
 pub struct Publisher<A, B> {
     sender: Sender<Inner<A>>,
