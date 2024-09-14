@@ -336,9 +336,10 @@ struct Indexed<A> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{scope, Compactable, Tasker};
+    use crate::{scope, Compactable};
     use rand::Rng;
     use std::iter::repeat_with;
+    use tokio::task::JoinSet;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct Message(usize, usize);
@@ -355,33 +356,29 @@ mod test {
         let (_, p, mut s, test_data) = fixtures();
         let run_length = test_data.len();
 
-        scope(|tasker: Tasker<String>| async move {
-            tasker
-                .spawn(async move {
-                    fill_log(p, test_data).await;
-                    Ok(())
-                })
-                .await;
+        scope(async |tasker: &mut JoinSet<Result<(), String>>| {
+            tasker.spawn(async move {
+                fill_log(p, test_data).await;
+                Ok(())
+            });
 
-            tasker
-                .spawn(async move {
-                    let mut count = 0;
-                    let mut prev = 0;
-                    while let Some(Message(_, j)) = s.pull().await {
-                        count += 1;
-                        if j > prev {
-                            prev = j
-                        } else {
-                            return Err(format!("Messages out of order {prev}, {j}"));
-                        }
-                    }
-                    if count == run_length {
-                        Ok(()) // for interleaved operation we see every message (no compaction)
+            tasker.spawn(async move {
+                let mut count = 0;
+                let mut prev = 0;
+                while let Some(Message(_, j)) = s.pull().await {
+                    count += 1;
+                    if j > prev {
+                        prev = j
                     } else {
-                        Err(format!("Messages received/sent = {}/{}", count, run_length))
+                        return Err(format!("Messages out of order {prev}, {j}"));
                     }
-                })
-                .await;
+                }
+                if count == run_length {
+                    Ok(()) // for interleaved operation we see every message (no compaction)
+                } else {
+                    Err(format!("Messages received/sent = {}/{}", count, run_length))
+                }
+            });
 
             Ok(())
         })

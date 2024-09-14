@@ -5,7 +5,7 @@ mod scope;
 #[cfg(feature = "log")]
 pub use log::{Log, Publisher, SharedSubscription, Subscription};
 #[cfg(feature = "scope")]
-pub use scope::{scope, simple_scope, Joiner, Tasker};
+pub use scope::scope;
 use std::hash::Hash;
 
 /// The log element type must provide a compaction key via this trait.
