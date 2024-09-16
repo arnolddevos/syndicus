@@ -297,13 +297,44 @@ where
     A: Compactable,
     B: Into<A>,
 {
-    /// Put a new message on the syndicate.
+    /// Access the inner
+    fn with_inner<F, X>(&self, f: F) -> X
+    where
+        F: FnOnce(&mut Inner<A>) -> X,
+    {
+        let mut x: Option<X> = None;
+        self.sender.send_modify(|inner| x = Some(f(inner)));
+        x.unwrap()
+    }
+
+    /// Push a new message to the syndicate.
     pub async fn push(&self, value: B) {
-        let mut heavy = false;
-        self.sender
-            .send_modify(|inner| heavy = inner.push(value.into()));
-        if heavy {
+        let value = value.into();
+        if self.with_inner(move |inner| inner.push(value)) {
             yield_now().await;
+        }
+    }
+
+    /// Push a number of new messages to the syndicate.
+    pub async fn push_all(&self, values: impl IntoIterator<Item = B>) {
+        let mut values = values.into_iter();
+
+        loop {
+            let exhausted = self.with_inner(|inner| loop {
+                if let Some(value) = values.next() {
+                    if inner.push(value.into()) {
+                        break false;
+                    }
+                } else {
+                    break true;
+                }
+            });
+
+            yield_now().await;
+
+            if exhausted {
+                break;
+            }
         }
     }
 }
