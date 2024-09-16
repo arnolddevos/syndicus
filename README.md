@@ -1,5 +1,7 @@
 # syndicus
 
+![Crates.io Version](https://img.shields.io/crates/v/syndicus)
+
 A rusty interpretation of publish/subscribe using types for topics
 and compaction to control backlog.
 
