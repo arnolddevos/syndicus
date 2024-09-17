@@ -26,22 +26,54 @@ will also operate in bounded space.  The price of this is compaction.
 
 ### Compaction
 
-The `Syndicate` will drop certain older messages.
-The last `linear_min` messages are always retained.  Any older message may be
-dropped if it has the same `compaction_key` as a younger message.
-The order of publication of messages is preserved in any case.
+The `Syndicate` will merge, or compact, certain older messages.
+The last `linear_min` messages are always retained.  
+Older messages are grouped by `compaction_key` 
+and each group is compacted into a single message. 
 
-> The assumption is that a subscriber only needs to see the latest message with
-> each key to converge on a valid state.
+By default, just the youngest message with a given key is retained,
+similar to a key-value store. 
+However, the order of publication among messages is also preserved. 
 
-### Key-Value Structure
+### Other Compaction Strategies
 
-The ability to extract a compaction key is expressed by a trait, `Compactable`.
-This effectively imposes a key-value structure on the data.
+The message type must implement the `Compactable` trait 
+which defines the `compaction_key` method.  
 
-The space complexity of a `Syndicate` is O(n) where n is the number of distinct
-compaction keys among the published messages. This is comparable to the
-space requirement of a key-value store.
+It also provides a method to merge two messages, `compact`.  
+A group of messages is compacted as if by 
+`g.reduce(|a, b| a.compact(b))` 
+where `g` is envisaged as an iterator over messages with
+the same key in order from yougest to oldest.
+
+As an example, consider a message type that counts events:
+
+```rust
+struct Event {
+    name: String,
+    count: usize,
+}
+
+impl Compactable for Event {
+    type Key = String;
+
+    fn compaction_key(&self) -> String {
+        self.name.clone()
+    }
+    fn compact(self, other: Event) -> Event {
+        Event {
+            name: self.name,
+            count: self.count + other.count,
+        }
+    }
+}
+```
+
+### Space
+
+Due to compaction, the space complexity of a `Syndicate` is O(n) 
+where n is the number of distinct compaction keys among the published messages. 
+This is comparable to the space requirement of a key-value store.
 
 ## scope
 

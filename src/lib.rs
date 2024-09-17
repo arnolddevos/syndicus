@@ -14,12 +14,20 @@ where
     Self: Sized,
     Self::Key: Eq + Hash,
 {
+    /// The type of the compaction key
     type Key;
 
-    /// The compaction key for this element.
+    /// The compaction key for this message.
+    /// In compaction messages with the same key will be merged.
     fn compaction_key(&self) -> Self::Key;
 
-    /// combine two elements
+    /// Merge two messages which have the same key.
+    ///
+    /// The method should be associative so
+    /// `a.compact(b.compact(c)) == (a.compact(b)).compact(c)`
+    ///
+    /// In compaction, `self` will be a younger message than the argument.
+    /// The default implementation retains the younger message.
     fn compact(self, _other: Self) -> Self {
         self
     }
