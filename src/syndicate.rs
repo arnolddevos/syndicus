@@ -1,7 +1,11 @@
 #![cfg(feature = "log")]
 
 use crate::Compactable;
-use std::{collections::HashSet, marker::PhantomData, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+    sync::Arc,
+};
 use tokio::{
     sync::{
         watch::{Receiver, Sender},
@@ -160,7 +164,7 @@ where
 
 impl<A> Inner<A>
 where
-    A: Compactable,
+    A: Compactable + Clone,
 {
     /// Push a new element onto the log. Returns true if the calling is advised to yield.
     fn push(&mut self, value: A) -> bool {
@@ -184,12 +188,6 @@ where
             let bound = self.linear.len() - self.linear_min; // how much to compact
             let offset0 = self.offset + 1 - self.linear.len(); // offset of oldest linear element
 
-            // keep youngest part of the linear log
-            let retained = self.linear[bound..].iter();
-
-            // record compaction keys in retained linear log
-            let mut keys: HashSet<A::Key> = retained.map(|a| a.compaction_key()).collect();
-
             // remove oldest part of the linear log
             let removed = self.linear.drain(0..bound);
 
@@ -205,11 +203,18 @@ where
             // previously compacted elements
             let old_compact = self.non_linear.drain(..);
 
-            // filter and collect the compacted log, from youngest to oldest elements
-            let compact: Vec<Indexed<A>> = new_compact
-                .chain(old_compact)
-                .filter(|c| keys.insert(c.value.compaction_key()))
-                .collect();
+            let mut keys = HashMap::<A::Key, usize>::new();
+            let mut compact = Vec::<Indexed<A>>::new();
+
+            for item in new_compact.chain(old_compact) {
+                let key = item.value.compaction_key();
+                if let Some(&ix) = keys.get(&key) {
+                    compact[ix].value = compact[ix].value.clone().compact(item.value);
+                } else {
+                    compact.push(item);
+                    keys.insert(key, compact.len());
+                }
+            }
 
             self.linear
                 .reserve_exact(self.linear_max - self.linear.len());

@@ -33,12 +33,11 @@ and each group is compacted into a single message.
 
 By default, just the youngest message with a given key is retained,
 similar to a key-value store. 
-However, the order of publication among messages is also preserved. 
+In addtion, the order of publication is preserved. 
 
 ### Other Compaction Strategies
 
-The message type must implement the `Compactable` trait 
-which defines the `compaction_key` method.  
+Messages implement the `Compactable` trait which defines the `compaction_key` method.  
 
 It also provides a method to merge two messages, `compact`.  
 A group of messages is compacted as if by 
@@ -46,28 +45,10 @@ A group of messages is compacted as if by
 where `g` is envisaged as an iterator over messages with
 the same key in order from yougest to oldest.
 
-As an example, consider a message type that counts events:
-
-```rust
-struct Event {
-    name: String,
-    count: usize,
-}
-
-impl Compactable for Event {
-    type Key = String;
-
-    fn compaction_key(&self) -> String {
-        self.name.clone()
-    }
-    fn compact(self, other: Event) -> Event {
-        Event {
-            name: self.name,
-            count: self.count + other.count,
-        }
-    }
-}
-```
+The default implementation of `compact` simply returns `self` which is
+always the youngest message.  Alternatively, `compact` can 
+can produce aggregations over the compacted messages.  It may also
+produce a result with a different key and topic to its input.
 
 ### Space
 
