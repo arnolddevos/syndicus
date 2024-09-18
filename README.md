@@ -39,16 +39,15 @@ In addtion, the order of publication is preserved.
 
 Messages implement the `Compactable` trait which defines the `compaction_key` method.  
 
-It also provides a method to merge two messages, `compact`.  
+It also provides a `compact` method. `a.compact(b)` consumes `b` and updates `a`.  
 A group of messages is compacted as if by 
-`g.reduce(|a, b| a.compact(b))` 
+`g.reduce(|mut a, b| {a.compact(b); a})` 
 where `g` is envisaged as an iterator over messages with
 the same key in order from yougest to oldest.
 
-The default implementation of `compact` simply returns `self` which is
-always the youngest message.  Alternatively, `compact` can 
-can produce aggregations over the compacted messages.  It may also
-produce a result with a different key and topic to its input.
+The default implementation of `compact` does nothing.  
+Alternatively, `compact` can can produce aggregations over the compacted messages.  
+It may also affect the key and topic of the message.
 
 ### Space
 

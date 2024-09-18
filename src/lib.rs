@@ -22,13 +22,7 @@ where
     fn compaction_key(&self) -> Self::Key;
 
     /// Merge two messages which have the same key.
-    ///
-    /// The method should be associative so
-    /// `a.compact(b.compact(c)) == (a.compact(b)).compact(c)`
-    ///
     /// In compaction, `self` will be a younger message than the argument.
-    /// The default implementation retains the younger message.
-    fn compact(self, _other: Self) -> Self {
-        self
-    }
+    /// The default implementation retains the younger message unchanged.
+    fn compact(&mut self, _other: Self) {}
 }

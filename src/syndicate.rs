@@ -164,7 +164,7 @@ where
 
 impl<A> Inner<A>
 where
-    A: Compactable + Clone,
+    A: Compactable,
 {
     /// Push a new element onto the log. Returns true if the calling is advised to yield.
     fn push(&mut self, value: A) -> bool {
@@ -204,21 +204,21 @@ where
             let old_compact = self.non_linear.drain(..);
 
             let mut keys = HashMap::<A::Key, usize>::new();
-            let mut compact = Vec::<Indexed<A>>::new();
+            let mut compact_result = Vec::<Indexed<A>>::new();
 
             for item in new_compact.chain(old_compact) {
                 let key = item.value.compaction_key();
                 if let Some(&ix) = keys.get(&key) {
-                    compact[ix].value = compact[ix].value.clone().compact(item.value);
+                    compact_result[ix].value.compact(item.value);
                 } else {
-                    compact.push(item);
-                    keys.insert(key, compact.len());
+                    keys.insert(key, compact_result.len());
+                    compact_result.push(item);
                 }
             }
 
             self.linear
                 .reserve_exact(self.linear_max - self.linear.len());
-            self.non_linear = compact;
+            self.non_linear = compact_result;
         }
     }
 }
