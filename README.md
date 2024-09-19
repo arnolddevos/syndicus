@@ -50,10 +50,5 @@ work with `Syndicate`. This is built on tokio `JoinSet`.  Tasks spawned within a
 will be joined at the close of the scope.  
 
 Tasks are assumed to return `Result<(), Error>` where `Error` is an error type used 
-throughout the application.  
-
-Task input/output is assumed to be via a `Syndicate<Message>`. In this design 
-`Message` and `Error` follow different paths and are handled separately.
-Tasks can be managed in sets (`JoinSet`) as they all have the same result type.
-
-
+throughout the application.  When `scope` is combined with `Syndicate`  
+a task's messages and errors follow different paths and are handled separately.
