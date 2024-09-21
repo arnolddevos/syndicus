@@ -104,6 +104,13 @@ impl<A> Syndicate<A> {
     }
 }
 
+/// Default sizing may or may not be suitable
+impl<A> Default for Syndicate<A> {
+    fn default() -> Self {
+        Syndicate::new(100, 200, 205)
+    }
+}
+
 /// The data structure of a `Syndicate` which is manged by a tokio `watch`.
 #[derive(Debug)]
 struct Inner<A> {
